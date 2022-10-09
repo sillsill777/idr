@@ -7,8 +7,7 @@ from torch.nn import functional as F
 
 def load_rgb(path):
     img = imageio.imread(path)
-    img = skimage.img_as_float32(img)
-
+    img = skimage.img_as_float32(img)  # (1200, 1600, 3)  [0,1]
     # pixel values between [-1,1]
     img -= 0.5
     img *= 2.
@@ -17,7 +16,7 @@ def load_rgb(path):
 
 def load_mask(path):
     alpha = imageio.imread(path, as_gray=True)
-    alpha = skimage.img_as_float32(alpha)
+    alpha = skimage.img_as_float32(alpha)  # [0,255.0]
     object_mask = alpha > 127.5
 
     return object_mask

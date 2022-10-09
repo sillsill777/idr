@@ -15,8 +15,8 @@ class Embedder:
             embed_fns.append(lambda x: x)
             out_dim += d
 
-        max_freq = self.kwargs['max_freq_log2']
-        N_freqs = self.kwargs['num_freqs']
+        max_freq = self.kwargs['max_freq_log2']  # 5
+        N_freqs = self.kwargs['num_freqs']  # 6
 
         if self.kwargs['log_sampling']:
             freq_bands = 2. ** torch.linspace(0., max_freq, N_freqs)
@@ -48,3 +48,10 @@ def get_embedder(multires):
     embedder_obj = Embedder(**embed_kwargs)
     def embed(x, eo=embedder_obj): return eo.embed(x)
     return embed, embedder_obj.out_dim
+
+
+if __name__=='__main__':
+    em,x=get_embedder(6)
+    print(x)  # 39
+    a=torch.arange(15).reshape(5,3)
+    print(em(a).shape)  # (5,39)

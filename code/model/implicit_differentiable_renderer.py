@@ -10,27 +10,27 @@ from model.sample_network import SampleNetwork
 class ImplicitNetwork(nn.Module):
     def __init__(
             self,
-            feature_vector_size,
-            d_in,
-            d_out,
-            dims,
+            feature_vector_size=256,  # 256
+            d_in=3,  # 3
+            d_out=1,  # 1
+            dims=[512,512,512,512,512,512,512,512],  # [512,512,512,512,512,512,512,512]
             geometric_init=True,
-            bias=1.0,
-            skip_in=(),
+            bias=1.0,  # 0.6
+            skip_in=(4,),  # [4]
             weight_norm=True,
-            multires=0
+            multires=6  # 6
     ):
         super().__init__()
 
-        dims = [d_in] + dims + [d_out + feature_vector_size]
+        dims = [d_in] + dims + [d_out + feature_vector_size]  # [3,512,512...,512,257]
 
         self.embed_fn = None
         if multires > 0:
-            embed_fn, input_ch = get_embedder(multires)
+            embed_fn, input_ch = get_embedder(multires)  # embed_fn, 39
             self.embed_fn = embed_fn
-            dims[0] = input_ch
+            dims[0] = input_ch  # [39, 512,512,...,512, 257]
 
-        self.num_layers = len(dims)
+        self.num_layers = len(dims)  # 10
         self.skip_in = skip_in
 
         for l in range(0, self.num_layers - 1):
@@ -255,3 +255,7 @@ class IDRNetwork(nn.Module):
         rgb_vals = self.rendering_network(points, normals, view_dirs, feature_vectors)
 
         return rgb_vals
+
+
+if __name__=='__main__':
+    a=ImplicitNetwork()

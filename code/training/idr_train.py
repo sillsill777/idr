@@ -5,7 +5,7 @@ import sys
 import torch
 
 import utils.general as utils
-import utils.plots as plt
+# import utils.plots as plt
 
 class IDRTrainRunner():
     def __init__(self,**kwargs):
@@ -80,18 +80,18 @@ class IDRTrainRunner():
         if kwargs['scan_id'] != -1:
             dataset_conf['scan_id'] = kwargs['scan_id']
 
+
         self.train_dataset = utils.get_class(self.conf.get_string('train.dataset_class'))(self.train_cameras,
                                                                                           **dataset_conf)
-
         print('Finish loading data ...')
 
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset,
-                                                            batch_size=self.batch_size,
+                                                            batch_size=self.batch_size,  # 1
                                                             shuffle=True,
                                                             collate_fn=self.train_dataset.collate_fn
                                                             )
         self.plot_dataloader = torch.utils.data.DataLoader(self.train_dataset,
-                                                           batch_size=self.conf.get_int('plot.plot_nimgs'),
+                                                           batch_size=self.conf.get_int('plot.plot_nimgs'),  # 1
                                                            shuffle=True,
                                                            collate_fn=self.train_dataset.collate_fn
                                                            )
@@ -288,3 +288,4 @@ class IDRTrainRunner():
                                 self.scheduler.get_lr()[0]))
 
             self.scheduler.step()
+

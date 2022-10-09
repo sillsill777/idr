@@ -16,7 +16,7 @@ class SceneDataset(torch.utils.data.Dataset):
                  cam_file=None
                  ):
 
-        self.instance_dir = os.path.join('../data', data_dir, 'scan{0}'.format(scan_id))
+        self.instance_dir = os.path.join('../../data', data_dir, 'scan{0}'.format(scan_id))
 
         self.total_pixels = img_res[0] * img_res[1]
         self.img_res = img_res
@@ -38,11 +38,16 @@ class SceneDataset(torch.utils.data.Dataset):
             self.cam_file = '{0}/{1}'.format(self.instance_dir, cam_file)
 
         camera_dict = np.load(self.cam_file)
-        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
-        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+        # scale_mat, scale_mat_inv, world_mat, world_mat_inv, camera_mat, camera_mat_inv
+
+        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]  # (4,4)
+        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]  # (4,4)
 
         self.intrinsics_all = []
         self.pose_all = []
+        print(scale_mats[14])
+        print(world_mats[14])
+
         for scale_mat, world_mat in zip(scale_mats, world_mats):
             P = world_mat @ scale_mat
             P = P[:3, :4]
@@ -52,14 +57,13 @@ class SceneDataset(torch.utils.data.Dataset):
 
         self.rgb_images = []
         for path in image_paths:
-            rgb = rend_util.load_rgb(path)
-            rgb = rgb.reshape(3, -1).transpose(1, 0)
+            rgb = rend_util.load_rgb(path)  # (3,1200,1600) 3, H , W
+            rgb = rgb.reshape(3, -1).transpose(1, 0)  # (1920000, 3)
             self.rgb_images.append(torch.from_numpy(rgb).float())
-
         self.object_masks = []
         for path in mask_paths:
             object_mask = rend_util.load_mask(path)
-            object_mask = object_mask.reshape(-1)
+            object_mask = object_mask.reshape(-1)  # (1920000,)
             self.object_masks.append(torch.from_numpy(object_mask).bool())
 
     def __len__(self):
@@ -151,3 +155,7 @@ class SceneDataset(torch.utils.data.Dataset):
         init_quat = torch.cat([init_quat, init_pose[:, :3, 3]], 1)
 
         return init_quat
+
+
+if __name__=='__main__':
+    ds=SceneDataset(False,'DTU',[1200,1600],65)
