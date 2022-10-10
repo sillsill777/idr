@@ -65,6 +65,12 @@ class ImplicitNetwork(nn.Module):
         self.softplus = nn.Softplus(beta=100)
 
     def forward(self, input, compute_grad=False):
+        """
+        input size = Batch, 3
+        output size = Batch, 257
+
+        At the last layer, no activation function.
+        """
         if self.embed_fn is not None:
             input = self.embed_fn(input)
 
@@ -99,22 +105,22 @@ class ImplicitNetwork(nn.Module):
 class RenderingNetwork(nn.Module):
     def __init__(
             self,
-            feature_vector_size,
-            mode,
-            d_in,
-            d_out,
-            dims,
+            feature_vector_size=256,
+            mode='idr',
+            d_in=9,
+            d_out=3,
+            dims=[512,512,512,512],
             weight_norm=True,
-            multires_view=0
+            multires_view=4
     ):
         super().__init__()
 
         self.mode = mode
-        dims = [d_in + feature_vector_size] + dims + [d_out]
+        dims = [d_in + feature_vector_size] + dims + [d_out]  # [256+9, 512,512,512,512, 3]
 
         self.embedview_fn = None
         if multires_view > 0:
-            embedview_fn, input_ch = get_embedder(multires_view)
+            embedview_fn, input_ch = get_embedder(multires_view)  # input_ch=27
             self.embedview_fn = embedview_fn
             dims[0] += (input_ch - 3)
 
@@ -133,9 +139,12 @@ class RenderingNetwork(nn.Module):
         self.tanh = nn.Tanh()
 
     def forward(self, points, normals, view_dirs, feature_vectors):
+        """
+        At the final output tanh is used.
+        """
         if self.embedview_fn is not None:
             view_dirs = self.embedview_fn(view_dirs)
-
+        rendering_input=None
         if self.mode == 'idr':
             rendering_input = torch.cat([points, view_dirs, normals, feature_vectors], dim=-1)
         elif self.mode == 'no_view_dir':
@@ -259,3 +268,41 @@ class IDRNetwork(nn.Module):
 
 if __name__=='__main__':
     a=ImplicitNetwork()
+
+    x=torch.arange(30).reshape(10,3).to(torch.float32)
+    print(a(x).shape)
+    out=a(x).sum()
+    out.backward()
+    print(out.requires_grad)
+    print('-'*20)
+
+    print(x.requires_grad)  # False
+    print(x.grad)  # None
+    x2=x.requires_grad_()
+    out2=a(x2).sum()
+    print(x2.requires_grad)  # True
+    out2.backward()
+    print(x2.grad)  # grad with shape (10,3)
+
+    print('*'*30)
+    b=RenderingNetwork()
+    print(a.gradient(x).shape)
+
+    print('*'*40)
+    x = torch.rand(3, 4)
+    x.requires_grad_()
+    print(x)
+    y=x**2
+    z=torch.sum(x)
+    gradZ=torch.autograd.grad(outputs=z,inputs=x)[0]
+    print(gradZ)
+    grad = torch.autograd.grad(outputs=y, inputs=x, grad_outputs=torch.ones_like(y), create_graph=True)[0]
+    print(grad)
+    print(x.grad)
+    grad2 = torch.autograd.grad(outputs=grad, inputs=x, grad_outputs=torch.ones_like(grad))[0]
+    print(grad2)
+    t=torch.sum(x**2)
+    gradT=torch.autograd.grad(outputs=t, inputs=x, create_graph=True)[0]
+    print(gradT)
+    t.backward()
+    print(x.grad)
