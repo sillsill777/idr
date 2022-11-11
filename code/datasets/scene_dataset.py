@@ -220,3 +220,11 @@ if __name__ == '__main__':
                                     shuffle=True,
                                     collate_fn=ds.collate_fn)
     x=next(iter(a))
+    indices, model_input, ground_truth=x
+    print(indices.shape)
+    for key,val in model_input.items():
+        print(key)
+        print(val.shape)
+    for key,val in ground_truth.items():
+        print(key)
+        print(val.shape)

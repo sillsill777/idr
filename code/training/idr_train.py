@@ -148,7 +148,7 @@ class IDRTrainRunner:
                     os.path.join(old_checkpnts_dir, self.cam_params_subdir, str(kwargs['checkpoint']) + ".pth"))
                 self.pose_vecs.load_state_dict(data["pose_vecs_state_dict"])
 
-        self.num_pixels = self.conf.get_int('train.num_pixels')
+        self.num_pixels = self.conf.get_int('train.num_pixels')  # 2048
         self.total_pixels = self.train_dataset.total_pixels
         self.img_res = self.train_dataset.img_res
         self.n_batches = len(self.train_dataloader)
@@ -255,9 +255,13 @@ class IDRTrainRunner:
                 if self.train_cameras:
                     self.pose_vecs.train()
 
-            self.train_dataset.change_sampling_idx(self.num_pixels)
+            self.train_dataset.change_sampling_idx(self.num_pixels)  # 2048-> 이미지, 마스크 UV에서 num_pixel만큼의
+            # 픽셀 수만 매번 샘플링 이때 샘플링 인덱스는 랜덤 by torch.randperm
 
             for data_index, (indices, model_input, ground_truth) in enumerate(self.train_dataloader):
+                '''return ( idx->[9,11] size=(batch),  sample->{'object_mask':tensor(batch, H*W), 'uv':tensor(batch, 
+                H*W,2), 'intrinsics':tensor(batch, 4,4), 'pose':tensor(batch, 4,4)},  ground_truth->{'rgb':tensor(
+                batch,H*W,3)} )  num_pixel instead H*W if using self.num_pixels'''
 
                 model_input["intrinsics"] = model_input["intrinsics"].cuda()
                 model_input["uv"] = model_input["uv"].cuda()
@@ -269,7 +273,7 @@ class IDRTrainRunner:
                 else:
                     model_input['pose'] = model_input['pose'].cuda()
 
-                model_outputs = self.model(model_input)
+                model_outputs = self.model(model_input)  # IDRNetwork
                 loss_output = self.loss(model_outputs, ground_truth)
 
                 loss = loss_output['loss']
@@ -285,8 +289,9 @@ class IDRTrainRunner:
                     self.optimizer_cam.step()
 
                 print(
-                    '{0} [{1}] ({2}/{3}): loss = {4}, rgb_loss = {5}, eikonal_loss = {6}, mask_loss = {7}, alpha = {8}, lr = {9}'
-                        .format(self.expname, epoch, data_index, self.n_batches, loss.item(),
+                    '{0} [{1}] ({2}/{3}): loss = {4}, rgb_loss = {5}, '
+                    'eikonal_loss = {6}, mask_loss = {7}, alpha = {8}, lr = {9} '.format(self.expname,
+                                epoch, data_index, self.n_batches, loss.item(),
                                 loss_output['rgb_loss'].item(),
                                 loss_output['eikonal_loss'].item(),
                                 loss_output['mask_loss'].item(),

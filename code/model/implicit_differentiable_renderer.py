@@ -179,7 +179,9 @@ class IDRNetwork(nn.Module):
         self.object_bounding_sphere = conf.get_float('ray_tracer.object_bounding_sphere')
 
     def forward(self, input):
-
+        """input = {'object_mask':tensor(batch, H*W), 'uv':tensor(batch,H*W,2),
+        'intrinsics':tensor(batch, 4,4), 'pose':tensor(batch, 4,4)}
+        num_pixel instead H*W, if using self.num_pixels"""
         # Parse model input
         intrinsics = input["intrinsics"]
         uv = input["uv"]
