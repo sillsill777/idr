@@ -5,14 +5,15 @@ import numpy as np
 import utils.general as utils
 from utils import rend_util
 
+
 class SceneDataset(torch.utils.data.Dataset):
     """Dataset for a class of objects, where each datapoint is a SceneInstanceDataset."""
 
     def __init__(self,
-                 train_cameras,
-                 data_dir,
-                 img_res,
-                 scan_id=0,
+                 train_cameras,  # False
+                 data_dir,  # DTU
+                 img_res, # [1200,1600]
+                 scan_id=0,  # 65
                  cam_file=None
                  ):
 
@@ -39,14 +40,24 @@ class SceneDataset(torch.utils.data.Dataset):
 
         camera_dict = np.load(self.cam_file)
         # scale_mat, scale_mat_inv, world_mat, world_mat_inv, camera_mat, camera_mat_inv
-
+        '''
+        f=open(self.instance_dir+'/camera.txt','w')
+        i=0
+        for key,val in camera_dict.items():
+            i+=1
+            f.write(str(key) + ': \n')
+            f.write(str(val))
+            f.write('\n\n')
+            if not i%6 and i != 0:
+                f.write('='*70+'\n')
+        f.close()
+        return
+        '''
         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]  # (4,4)
         world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]  # (4,4)
 
         self.intrinsics_all = []
         self.pose_all = []
-        print(scale_mats[14])
-        print(world_mats[14])
 
         for scale_mat, world_mat in zip(scale_mats, world_mats):
             P = world_mat @ scale_mat
@@ -73,15 +84,33 @@ class SceneDataset(torch.utils.data.Dataset):
         uv = np.mgrid[0:self.img_res[0], 0:self.img_res[1]].astype(np.int32)
         uv = torch.from_numpy(np.flip(uv, axis=0).copy()).float()
         uv = uv.reshape(2, -1).transpose(1, 0)
+        '''
+        img_res=[5,3]
+        uv=[[0, 0],
+            [1, 0],
+            [2, 0],
+            [0, 1],
+            [1, 1],
+            [2, 1],
+            [0, 2],
+            [1, 2],
+            [2, 2],
+            [0, 3],
+            [1, 3],
+            [2, 3],
+            [0, 4],
+            [1, 4],
+            [2, 4]]
+        '''
 
         sample = {
-            "object_mask": self.object_masks[idx],
-            "uv": uv,
-            "intrinsics": self.intrinsics_all[idx],
+            "object_mask": self.object_masks[idx],  # torch.Size([1920000])
+            "uv": uv,  # torch.Size([1920000, 2])
+            "intrinsics": self.intrinsics_all[idx],  # torch.Size([4, 4])
         }
 
         ground_truth = {
-            "rgb": self.rgb_images[idx]
+            "rgb": self.rgb_images[idx]  # torch.Size([1920000, 3])
         }
 
         if self.sampling_idx is not None:
@@ -90,14 +119,20 @@ class SceneDataset(torch.utils.data.Dataset):
             sample["uv"] = uv[self.sampling_idx, :]
 
         if not self.train_cameras:
-            sample["pose"] = self.pose_all[idx]
+            sample["pose"] = self.pose_all[idx]  # torch.Size([4, 4])
 
         return idx, sample, ground_truth
 
     def collate_fn(self, batch_list):
+        #  [print(i,'\n\n') for i in batch_list[0]]
+        """'
+        batch_list는 batch_size 만큼의 튜플을 원소 개수로 가지는 리스트
+        각 튜플은
+        (idx,  {'object_mask':tensor(...), 'uv':tensor(...),
+        'intrinsics':tensor(...), 'pose':tensor(...)},  {'rgb':tensor(...)})임
+        """
         # get list of dictionaries and returns input, ground_true as dictionary for all batch instances
         batch_list = zip(*batch_list)
-
         all_parsed = []
         for entry in batch_list:
             if type(entry[0]) is dict:
@@ -108,7 +143,19 @@ class SceneDataset(torch.utils.data.Dataset):
                 all_parsed.append(ret)
             else:
                 all_parsed.append(torch.LongTensor(entry))
-
+        '''
+        for val in all_parsed:
+            print(val,'\n')
+            if type(val)==dict:
+                for key,v in val.items():
+                    print(key+': \n')
+                    print(v,'\n')
+                    print(v.shape)
+        '''
+        '''
+        return ( idx->[9,11],  sample->{'object_mask':tensor(batch, ...), 'uv':tensor(batch, ...),
+        'intrinsics':tensor(batch, ...), 'pose':tensor(batch, ...)},  ground_truth->{'rgb':tensor(batch,...)} )
+        '''
         return tuple(all_parsed)
 
     def change_sampling_idx(self, sampling_size):
@@ -157,5 +204,19 @@ class SceneDataset(torch.utils.data.Dataset):
         return init_quat
 
 
-if __name__=='__main__':
-    ds=SceneDataset(False,'DTU',[1200,1600],65)
+if __name__ == '__main__':
+    ds = SceneDataset(False, 'DTU', [1200, 1600], 65)
+    idx1, sample1, ground_truth1=ds.__getitem__(23)
+    for key,val in sample1.items():
+        print(key+' : \n')
+        print(str(val)+'\n')
+        print('shape: ')
+        print(val.shape)
+    print(ground_truth1)
+    print(ground_truth1['rgb'].shape)
+    print('='*70)
+    a = torch.utils.data.DataLoader(ds,
+                                    batch_size=2,
+                                    shuffle=True,
+                                    collate_fn=ds.collate_fn)
+    x=next(iter(a))

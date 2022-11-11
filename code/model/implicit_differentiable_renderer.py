@@ -7,13 +7,14 @@ from model.embedder import *
 from model.ray_tracing import RayTracing
 from model.sample_network import SampleNetwork
 
+
 class ImplicitNetwork(nn.Module):
     def __init__(
             self,
             feature_vector_size=256,  # 256
             d_in=3,  # 3
             d_out=1,  # 1
-            dims=[512,512,512,512,512,512,512,512],  # [512,512,512,512,512,512,512,512]
+            dims=[512, 512, 512, 512, 512, 512, 512, 512],  # [512,512,512,512,512,512,512,512]
             geometric_init=True,
             bias=1.0,  # 0.6
             skip_in=(4,),  # [4]
@@ -91,7 +92,7 @@ class ImplicitNetwork(nn.Module):
 
     def gradient(self, x):
         x.requires_grad_(True)
-        y = self.forward(x)[:,:1]
+        y = self.forward(x)[:, :1]
         d_output = torch.ones_like(y, requires_grad=False, device=y.device)
         gradients = torch.autograd.grad(
             outputs=y,
@@ -102,6 +103,7 @@ class ImplicitNetwork(nn.Module):
             only_inputs=True)[0]
         return gradients.unsqueeze(1)
 
+
 class RenderingNetwork(nn.Module):
     def __init__(
             self,
@@ -109,7 +111,7 @@ class RenderingNetwork(nn.Module):
             mode='idr',
             d_in=9,
             d_out=3,
-            dims=[512,512,512,512],
+            dims=[512, 512, 512, 512],
             weight_norm=True,
             multires_view=4
     ):
@@ -144,7 +146,7 @@ class RenderingNetwork(nn.Module):
         """
         if self.embedview_fn is not None:
             view_dirs = self.embedview_fn(view_dirs)
-        rendering_input=None
+        rendering_input = None
         if self.mode == 'idr':
             rendering_input = torch.cat([points, view_dirs, normals, feature_vectors], dim=-1)
         elif self.mode == 'no_view_dir':
@@ -165,10 +167,11 @@ class RenderingNetwork(nn.Module):
         x = self.tanh(x)
         return x
 
+
 class IDRNetwork(nn.Module):
     def __init__(self, conf):
         super().__init__()
-        self.feature_vector_size = conf.get_int('feature_vector_size')
+        self.feature_vector_size = conf.get_int('feature_vector_size')  # 256
         self.implicit_network = ImplicitNetwork(self.feature_vector_size, **conf.get_config('implicit_network'))
         self.rendering_network = RenderingNetwork(self.feature_vector_size, **conf.get_config('rendering_network'))
         self.ray_tracer = RayTracing(**conf.get_config('ray_tracer'))
@@ -266,43 +269,43 @@ class IDRNetwork(nn.Module):
         return rgb_vals
 
 
-if __name__=='__main__':
-    a=ImplicitNetwork()
+if __name__ == '__main__':
+    a = ImplicitNetwork()
 
-    x=torch.arange(30).reshape(10,3).to(torch.float32)
+    x = torch.arange(30).reshape(10, 3).to(torch.float32)
     print(a(x).shape)
-    out=a(x).sum()
+    out = a(x).sum()
     out.backward()
     print(out.requires_grad)
-    print('-'*20)
+    print('-' * 20)
 
     print(x.requires_grad)  # False
     print(x.grad)  # None
-    x2=x.requires_grad_()
-    out2=a(x2).sum()
+    x2 = x.requires_grad_()
+    out2 = a(x2).sum()
     print(x2.requires_grad)  # True
     out2.backward()
     print(x2.grad)  # grad with shape (10,3)
 
-    print('*'*30)
-    b=RenderingNetwork()
+    print('*' * 30)
+    b = RenderingNetwork()
     print(a.gradient(x).shape)
 
-    print('*'*40)
+    print('*' * 40)
     x = torch.rand(3, 4)
     x.requires_grad_()
     print(x)
-    y=x**2
-    z=torch.sum(x)
-    gradZ=torch.autograd.grad(outputs=z,inputs=x)[0]
+    y = x ** 2
+    z = torch.sum(x)
+    gradZ = torch.autograd.grad(outputs=z, inputs=x)[0]
     print(gradZ)
     grad = torch.autograd.grad(outputs=y, inputs=x, grad_outputs=torch.ones_like(y), create_graph=True)[0]
     print(grad)
     print(x.grad)
     grad2 = torch.autograd.grad(outputs=grad, inputs=x, grad_outputs=torch.ones_like(grad))[0]
     print(grad2)
-    t=torch.sum(x**2)
-    gradT=torch.autograd.grad(outputs=t, inputs=x, create_graph=True)[0]
+    t = torch.sum(x ** 2)
+    gradT = torch.autograd.grad(outputs=t, inputs=x, create_graph=True)[0]
     print(gradT)
     t.backward()
     print(x.grad)

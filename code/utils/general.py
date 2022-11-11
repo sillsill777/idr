@@ -2,9 +2,11 @@ import os
 from glob import glob
 import torch
 
+
 def mkdir_ifnotexists(directory):
     if not os.path.exists(directory):
         os.mkdir(directory)
+
 
 def get_class(kls):
     parts = kls.split('.')
@@ -14,11 +16,13 @@ def get_class(kls):
         m = getattr(m, comp)
     return m
 
+
 def glob_imgs(path):
     imgs = []
     for ext in ['*.png', '*.jpg', '*.JPEG', '*.JPG']:
         imgs.extend(glob(os.path.join(path, ext)))
     return imgs
+
 
 def split_input(model_input, total_pixels):
     '''
@@ -33,6 +37,7 @@ def split_input(model_input, total_pixels):
         data['object_mask'] = torch.index_select(model_input['object_mask'], 1, indx)
         split.append(data)
     return split
+
 
 def merge_output(res, total_pixels, batch_size):
     ''' Merge the split output. '''
