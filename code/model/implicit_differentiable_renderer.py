@@ -186,9 +186,15 @@ class IDRNetwork(nn.Module):
         intrinsics = input["intrinsics"]
         uv = input["uv"]
         pose = input["pose"]
-        object_mask = input["object_mask"].reshape(-1)
+        # pose is matrix that transforms point in camera coord to world coord
+        object_mask = input["object_mask"].reshape(-1)  # (Batch*num_points)
 
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
+        """
+        ray_dirs=(Batch,num_points(pixels),3)
+        cam_loc=(Batch,3)
+        each in world coord, ray direction is normalized
+        """
 
         batch_size, num_pixels, _ = ray_dirs.shape
 

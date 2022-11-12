@@ -33,22 +33,28 @@ def load_K_Rt_from_P(filename, P=None):
         P = np.asarray(lines).astype(np.float32).squeeze()
 
     out = cv2.decomposeProjectionMatrix(P)
-    K = out[0]
-    R = out[1]
-    t = out[2]
+    K = out[0]  # camera intrinsic
+    R = out[1]  # W2C
+    t = out[2]  # t[:3]/t[3]-> vector pointing from world coordinate origin to camera origin in world coordinate
 
     K = K / K[2, 2]
     intrinsics = np.eye(4)
     intrinsics[:3, :3] = K
 
     pose = np.eye(4, dtype=np.float32)
-    pose[:3, :3] = R.transpose()
+    pose[:3, :3] = R.transpose()  # C2W
     pose[:3, 3] = (t[:3] / t[3])[:, 0]
-
+    # pose matrix probably transformation that changes point from camera coord to world coord
     return intrinsics, pose
 
 
 def get_camera_params(uv, pose, intrinsics):
+    """
+    input: uv=(Batch,num_points,2), intrinsics=(Batch,4,4)
+
+    output: ray_dirs=(Batch,num_point,3), cam_loc=(Batch,3)
+    each in world coordinate
+    """
     if pose.shape[1] == 7:  # In case of quaternion vector representation
         cam_loc = pose[:, 4:]
         R = quat_to_rot(pose[:, :4])
@@ -56,7 +62,7 @@ def get_camera_params(uv, pose, intrinsics):
         p[:, :3, :3] = R
         p[:, :3, 3] = cam_loc
     else:  # In case of pose matrix representation
-        cam_loc = pose[:, :3, 3]
+        cam_loc = pose[:, :3, 3]  # camera location in world coord
         p = pose
 
     batch_size, num_samples, _ = uv.shape
@@ -66,15 +72,15 @@ def get_camera_params(uv, pose, intrinsics):
     y_cam = uv[:, :, 1].view(batch_size, -1)
     z_cam = depth.view(batch_size, -1)
 
-    pixel_points_cam = lift(x_cam, y_cam, z_cam, intrinsics=intrinsics)
+    pixel_points_cam = lift(x_cam, y_cam, z_cam, intrinsics=intrinsics)  # uv coord to camera coord
+    # Batch, num_point, 4
 
     # permute for batch matrix product
-    pixel_points_cam = pixel_points_cam.permute(0, 2, 1)
+    pixel_points_cam = pixel_points_cam.permute(0, 2, 1)  # Batch, 4, num_point
 
-    world_coords = torch.bmm(p, pixel_points_cam).permute(0, 2, 1)[:, :, :3]
+    world_coords = torch.bmm(p, pixel_points_cam).permute(0, 2, 1)[:, :, :3]  # Batch, num_points, 3
     ray_dirs = world_coords - cam_loc[:, None, :]
     ray_dirs = F.normalize(ray_dirs, dim=2)
-
     return ray_dirs, cam_loc
 
 
@@ -153,7 +159,7 @@ def get_sphere_intersection(cam_loc, ray_directions, r=1.0):
 
     n_imgs, n_pix, _ = ray_directions.shape
 
-    cam_loc = cam_loc.unsqueeze(-1)
+    cam_loc = cam_loc.unsqueeze(-1)  # Batch, 3, 1
     ray_cam_dot = torch.bmm(ray_directions, cam_loc).squeeze()
     under_sqrt = ray_cam_dot ** 2 - (cam_loc.norm(2, 1) ** 2 - r ** 2)
 

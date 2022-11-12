@@ -12,8 +12,7 @@ class RayTracing(nn.Module):
             line_step_iters=1,
             sphere_tracing_iters=10,
             n_steps=100,
-            n_secant_steps=8,
-    ):
+            n_secant_steps=8,):
         super().__init__()
 
         self.object_bounding_sphere = object_bounding_sphere
@@ -25,11 +24,16 @@ class RayTracing(nn.Module):
         self.n_secant_steps = n_secant_steps
 
     def forward(self,
-                sdf,
+                sdf,  # lambda x: self.implicit_network(x)[:, 0]
                 cam_loc,
                 object_mask,
                 ray_directions
                 ):
+        """
+        ray_dirs=(Batch,num_points(pixels),3)
+        cam_loc=(Batch,3)
+        each in world coord, ray direction is normalized
+        """
 
         batch_size, num_pixels, _ = ray_directions.shape
 

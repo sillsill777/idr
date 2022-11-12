@@ -274,6 +274,7 @@ class IDRTrainRunner:
                     model_input['pose'] = model_input['pose'].cuda()
 
                 model_outputs = self.model(model_input)  # IDRNetwork
+
                 loss_output = self.loss(model_outputs, ground_truth)
 
                 loss = loss_output['loss']
