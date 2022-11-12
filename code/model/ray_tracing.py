@@ -39,6 +39,7 @@ class RayTracing(nn.Module):
 
         sphere_intersections, mask_intersect = rend_util.get_sphere_intersection(cam_loc, ray_directions,
                                                                                  r=self.object_bounding_sphere)
+        # Output: n_images , n_rays , 2 (close and far) ; n_images , n_rays
 
         curr_start_points, unfinished_mask_start, acc_start_dis, acc_end_dis, min_dis, max_dis = \
             self.sphere_tracing(batch_size, num_pixels, sdf, cam_loc, ray_directions, mask_intersect,
@@ -108,11 +109,21 @@ class RayTracing(nn.Module):
 
     def sphere_tracing(self, batch_size, num_pixels, sdf, cam_loc, ray_directions, mask_intersect,
                        sphere_intersections):
-        ''' Run sphere tracing algorithm for max iterations from both sides of unit sphere intersection '''
-
+        """ Run sphere tracing algorithm for max iterations from both sides of unit sphere intersection """
+        """
+        batch_size= num_image=Batch
+        num_pixels=num_points=num_rays
+        
+        ray_dirs=(Batch, num_points(pixels,rays), 3)
+        cam_loc=(Batch, 3)
+        each in world coord, ray direction is normalized
+        
+        mask_intersect=(n_images, n_rays)
+        sphere_intersections=(n_images, n_rays, 2)
+        """
         sphere_intersections_points = cam_loc.reshape(batch_size, 1, 1, 3) + sphere_intersections.unsqueeze(
-            -1) * ray_directions.unsqueeze(2)
-        unfinished_mask_start = mask_intersect.reshape(-1).clone()
+            -1) * ray_directions.unsqueeze(2)  # n_img, n_ray, 2, 3
+        unfinished_mask_start = mask_intersect.reshape(-1).clone()  # n_img*n_rays
         unfinished_mask_end = mask_intersect.reshape(-1).clone()
 
         # Initialize start current points
