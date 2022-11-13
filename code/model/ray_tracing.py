@@ -9,10 +9,10 @@ class RayTracing(nn.Module):
             object_bounding_sphere=1.0,
             sdf_threshold=5.0e-5,
             line_search_step=0.5,
-            line_step_iters=1,
+            line_step_iters=3,
             sphere_tracing_iters=10,
             n_steps=100,
-            n_secant_steps=8,):
+            n_secant_steps=8, ):
         super().__init__()
 
         self.object_bounding_sphere = object_bounding_sphere
@@ -44,7 +44,14 @@ class RayTracing(nn.Module):
         curr_start_points, unfinished_mask_start, acc_start_dis, acc_end_dis, min_dis, max_dis = \
             self.sphere_tracing(batch_size, num_pixels, sdf, cam_loc, ray_directions, mask_intersect,
                                 sphere_intersections)
-
+        """
+        curr_start_points : (Batch*n_rays, 3)
+        unfinished_mask_start : (Batch*n_rays) boolean
+        acc_start_dis : (Batch*n_rays) accumulate distance for starting point which is intersection with object and ray
+        acc_end_dis : (Batch*n_rays) accumulate distance for end point which is intersection with object and ray
+        min_dis : (Batch*n_rays) unit sphere와의 가까운 교점
+        max_dis : (Batch*n_rays) unit shpere와의 먼 교점
+        """
         network_object_mask = (acc_start_dis < acc_end_dis)
 
         # The non convergent rays should be handled by the sampler
@@ -103,9 +110,7 @@ class RayTracing(nn.Module):
             curr_start_points[mask] = min_mask_points
             acc_start_dis[mask] = min_mask_dist
 
-        return curr_start_points, \
-               network_object_mask, \
-               acc_start_dis
+        return curr_start_points, network_object_mask, acc_start_dis
 
     def sphere_tracing(self, batch_size, num_pixels, sdf, cam_loc, ray_directions, mask_intersect,
                        sphere_intersections):
@@ -129,18 +134,18 @@ class RayTracing(nn.Module):
         # Initialize start current points
         curr_start_points = torch.zeros(batch_size * num_pixels, 3).cuda().float()
         curr_start_points[unfinished_mask_start] = sphere_intersections_points[:, :, 0, :].reshape(-1, 3)[
-            unfinished_mask_start]
-        acc_start_dis = torch.zeros(batch_size * num_pixels).cuda().float()
+            unfinished_mask_start]  # batch*num_ray, 3 -> 가까운 쪽 점 위치 저장
+        acc_start_dis = torch.zeros(batch_size * num_pixels).cuda().float()  # batch*num_ray -> 가까운 쪽 교점 거리 저장
         acc_start_dis[unfinished_mask_start] = sphere_intersections.reshape(-1, 2)[unfinished_mask_start, 0]
 
         # Initialize end current points
         curr_end_points = torch.zeros(batch_size * num_pixels, 3).cuda().float()
         curr_end_points[unfinished_mask_end] = sphere_intersections_points[:, :, 1, :].reshape(-1, 3)[
-            unfinished_mask_end]
-        acc_end_dis = torch.zeros(batch_size * num_pixels).cuda().float()
+            unfinished_mask_end]  # batch*num_ray, 3 -> 먼 쪽 점 위치 저장
+        acc_end_dis = torch.zeros(batch_size * num_pixels).cuda().float()  # batch*num_ray -> 먼 쪽 교점 거리 저장
         acc_end_dis[unfinished_mask_end] = sphere_intersections.reshape(-1, 2)[unfinished_mask_end, 1]
 
-        # Initizliae min and max depth
+        # Initialize min and max depth
         min_dis = acc_start_dis.clone()
         max_dis = acc_end_dis.clone()
 
@@ -157,7 +162,7 @@ class RayTracing(nn.Module):
             # Update sdf
             curr_sdf_start = torch.zeros_like(acc_start_dis).cuda()
             curr_sdf_start[unfinished_mask_start] = next_sdf_start[unfinished_mask_start]
-            curr_sdf_start[curr_sdf_start <= self.sdf_threshold] = 0
+            curr_sdf_start[curr_sdf_start <= self.sdf_threshold] = 0  # self.sdf_threshold=5e-5
 
             curr_sdf_end = torch.zeros_like(acc_end_dis).cuda()
             curr_sdf_end[unfinished_mask_end] = next_sdf_end[unfinished_mask_end]
@@ -167,8 +172,8 @@ class RayTracing(nn.Module):
             unfinished_mask_start = unfinished_mask_start & (curr_sdf_start > self.sdf_threshold)
             unfinished_mask_end = unfinished_mask_end & (curr_sdf_end > self.sdf_threshold)
 
-            if (
-                    unfinished_mask_start.sum() == 0 and unfinished_mask_end.sum() == 0) or iters == self.sphere_tracing_iters:
+            if (unfinished_mask_start.sum() == 0 and unfinished_mask_end.sum() == 0) \
+                    or iters == self.sphere_tracing_iters:  # self.sphere_tracing_iters=10
                 break
             iters += 1
 
@@ -178,11 +183,10 @@ class RayTracing(nn.Module):
             acc_end_dis = acc_end_dis - curr_sdf_end
 
             # Update points
-            curr_start_points = (cam_loc.unsqueeze(1) + acc_start_dis.reshape(batch_size, num_pixels,
-                                                                              1) * ray_directions).reshape(-1, 3)
-            curr_end_points = (
-                        cam_loc.unsqueeze(1) + acc_end_dis.reshape(batch_size, num_pixels, 1) * ray_directions).reshape(
-                -1, 3)
+            curr_start_points = (cam_loc.unsqueeze(1) +
+                                 acc_start_dis.reshape(batch_size, num_pixels, 1) * ray_directions).reshape(-1, 3)
+            curr_end_points = (cam_loc.unsqueeze(1) +
+                               acc_end_dis.reshape(batch_size, num_pixels, 1) * ray_directions).reshape(-1, 3)
 
             # Fix points which wrongly crossed the surface
             next_sdf_start = torch.zeros_like(acc_start_dis).cuda()
@@ -194,21 +198,28 @@ class RayTracing(nn.Module):
             not_projected_start = next_sdf_start < 0
             not_projected_end = next_sdf_end < 0
             not_proj_iters = 0
-            while (
-                    not_projected_start.sum() > 0 or not_projected_end.sum() > 0) and not_proj_iters < self.line_step_iters:
+
+            while (not_projected_start.sum() > 0 or not_projected_end.sum() > 0) \
+                    and not_proj_iters < self.line_step_iters:  # 3
                 # Step backwards
                 acc_start_dis[not_projected_start] -= ((1 - self.line_search_step) / (2 ** not_proj_iters)) * \
-                                                      curr_sdf_start[not_projected_start]
-                curr_start_points[not_projected_start] = \
-                (cam_loc.unsqueeze(1) + acc_start_dis.reshape(batch_size, num_pixels, 1) * ray_directions).reshape(-1,
-                                                                                                                   3)[
-                    not_projected_start]
+                                                      curr_sdf_start[not_projected_start]  # self.line_search_step=0.5
+                '''
+                not_proj_iter=0에서는 curr_sdf_만큼 이동 했는데 그 위치에서 sdf(이 값은 next_sdf에 해당)가 음수라 curr_sdf의 반만큼 거꾸로 이동함.
+                not_proj_iter=1에서는 위와 같이 거꾸로 가도 그 위치에서 또 sdf가 음수라 curr_sdf의 반의 반만큼 추가로 거꾸로 이동함
+                '''
+                curr_start_points[not_projected_start] = (cam_loc.unsqueeze(1) +
+                                                          acc_start_dis.reshape(batch_size, num_pixels, 1) *
+                                                          ray_directions).reshape(-1, 3)[not_projected_start]
+                '''
+                curr_sdf가 반만큼 줄어서 거꾸로 이동하였으므로 현재 점의 위치 재계산
+                '''
+                acc_end_dis[not_projected_end] += ((1 - self.line_search_step) / (2 ** not_proj_iters)) * \
+                                                  curr_sdf_end[not_projected_end]
 
-                acc_end_dis[not_projected_end] += ((1 - self.line_search_step) / (2 ** not_proj_iters)) * curr_sdf_end[
-                    not_projected_end]
-                curr_end_points[not_projected_end] = \
-                (cam_loc.unsqueeze(1) + acc_end_dis.reshape(batch_size, num_pixels, 1) * ray_directions).reshape(-1, 3)[
-                    not_projected_end]
+                curr_end_points[not_projected_end] = (cam_loc.unsqueeze(1) +
+                                                      acc_end_dis.reshape(batch_size, num_pixels, 1) *
+                                                      ray_directions).reshape(-1, 3)[not_projected_end]
 
                 # Calc sdf
                 next_sdf_start[not_projected_start] = sdf(curr_start_points[not_projected_start])
@@ -225,34 +236,52 @@ class RayTracing(nn.Module):
         return curr_start_points, unfinished_mask_start, acc_start_dis, acc_end_dis, min_dis, max_dis
 
     def ray_sampler(self, sdf, cam_loc, object_mask, ray_directions, sampler_min_max, sampler_mask):
-        ''' Sample the ray in a given range and run secant on rays which have sign transition '''
+        """ Sample the ray in a given range and run secant on rays which have sign transition """
+        """
+        ray_dirs=(Batch, num_points(pixels,rays), 3)
+        cam_loc=(Batch, 3)
+        each in world coord, ray direction is normalized
+        object_mask=(Batch*num_rays)
 
+        sampler_min_max=(Batch, n_rays, 2) 0: acc_start_dis, 1: acc_end_dis  for sample_mask True else zero
+        sampler_mask=unfinished_mask_start : (Batch*n_rays) boolean
+        """
         batch_size, num_pixels, _ = ray_directions.shape
         n_total_pxl = batch_size * num_pixels
         sampler_pts = torch.zeros(n_total_pxl, 3).cuda().float()
         sampler_dists = torch.zeros(n_total_pxl).cuda().float()
 
-        intervals_dist = torch.linspace(0, 1, steps=self.n_steps).cuda().view(1, 1, -1)
+        intervals_dist = torch.linspace(0, 1, steps=self.n_steps).cuda().view(1, 1, -1)  # n_steps=100
 
-        pts_intervals = sampler_min_max[:, :, 0].unsqueeze(-1) + intervals_dist * (
-                    sampler_min_max[:, :, 1] - sampler_min_max[:, :, 0]).unsqueeze(-1)
+        pts_intervals = sampler_min_max[:, :, 0].unsqueeze(-1) + \
+                        intervals_dist * (sampler_min_max[:, :, 1] - sampler_min_max[:, :, 0]).unsqueeze(-1)
+        # (Batch, n_rays, 100) [acc_start_dis, acc_end_dis]
+
         points = cam_loc.reshape(batch_size, 1, 1, 3) + pts_intervals.unsqueeze(-1) * ray_directions.unsqueeze(2)
+        # (Batch, n_rays, 100, 3)
 
-        # Get the non convergent rays
-        mask_intersect_idx = torch.nonzero(sampler_mask).flatten()
-        points = points.reshape((-1, self.n_steps, 3))[sampler_mask, :, :]
-        pts_intervals = pts_intervals.reshape((-1, self.n_steps))[sampler_mask]
+        # Get the non-convergent rays
+        # n_unfinished = num of non-convergent rays
+        mask_intersect_idx = torch.nonzero(sampler_mask).flatten()  # (n_unfinished) -> ray sampling을 할 ray의 index
+        points = points.reshape((-1, self.n_steps, 3))[sampler_mask, :, :]  # (n_unfinished, 100, 3)
+        pts_intervals = pts_intervals.reshape((-1, self.n_steps))[sampler_mask]  # (n_unfinished, 100)
 
         sdf_val_all = []
         for pnts in torch.split(points.reshape(-1, 3), 100000, dim=0):
             sdf_val_all.append(sdf(pnts))
-        sdf_val = torch.cat(sdf_val_all).reshape(-1, self.n_steps)
+        sdf_val = torch.cat(sdf_val_all).reshape(-1, self.n_steps)  # n_unfinished, 100
 
-        tmp = torch.sign(sdf_val) * torch.arange(self.n_steps, 0, -1).cuda().float().reshape(
-            (1, self.n_steps))  # Force argmin to return the first min value
-        sampler_pts_ind = torch.argmin(tmp, -1)
-        sampler_pts[mask_intersect_idx] = points[torch.arange(points.shape[0]), sampler_pts_ind, :]
-        sampler_dists[mask_intersect_idx] = pts_intervals[torch.arange(pts_intervals.shape[0]), sampler_pts_ind]
+        tmp = torch.sign(sdf_val) * torch.arange(self.n_steps, 0, -1).cuda().float().reshape((1, self.n_steps))
+        # torch.arange(100,0,-1)=> 100,99,98...2,1
+        # tmp -> (n_unfinished, 100)
+        # Force argmin to return the first min value
+
+        sampler_pts_ind = torch.argmin(tmp, -1)  # n_unfinished
+        sampler_pts[mask_intersect_idx] = points[torch.arange(points.shape[0]), sampler_pts_ind, :]  # n_unfinished,3
+        # points[:, sampler_pts_ind, :]가 아님 / 위는 fancy indexing
+        sampler_dists[mask_intersect_idx] = \
+            pts_intervals[torch.arange(pts_intervals.shape[0]), sampler_pts_ind]  # n_unfinished
+        # pts_intervals[:, sampler_pts_ind]가 아님
 
         true_surface_pts = object_mask[sampler_mask]
         net_surface_pts = (sdf_val[torch.arange(sdf_val.shape[0]), sampler_pts_ind] < 0)
@@ -293,7 +322,7 @@ class RayTracing(nn.Module):
         return sampler_pts, sampler_net_obj_mask, sampler_dists
 
     def secant(self, sdf_low, sdf_high, z_low, z_high, cam_loc, ray_directions, sdf):
-        ''' Runs the secant method for interval [z_low, z_high] for n_secant_steps '''
+        """ Runs the secant method for interval [z_low, z_high] for n_secant_steps """
 
         z_pred = - sdf_low * (z_high - z_low) / (sdf_high - sdf_low) + z_low
         for i in range(self.n_secant_steps):
