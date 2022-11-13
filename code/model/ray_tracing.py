@@ -316,6 +316,7 @@ class RayTracing(nn.Module):
             # 둘 다 (n_secant_pts, 3)
 
             z_pred_secant = self.secant(sdf_low, sdf_high, z_low, z_high, cam_loc_secant, ray_directions_secant, sdf)
+            # (n_secent_pts)
 
             # Get points
             sampler_pts[mask_intersect_idx[secant_pts]] = cam_loc_secant + z_pred_secant.unsqueeze(
@@ -326,15 +327,26 @@ class RayTracing(nn.Module):
 
     def secant(self, sdf_low, sdf_high, z_low, z_high, cam_loc, ray_directions, sdf):
         """ Runs the secant method for interval [z_low, z_high] for n_secant_steps """
-
-        z_pred = - sdf_low * (z_high - z_low) / (sdf_high - sdf_low) + z_low
+        """
+        sdf_low, sdf_high, z_low, z_high : (n_secent_pts)
+        cam_loc, ray_directions : (n_secant_pts, 3)
+        
+        sdf_low = f(z_low)
+        sdf_high = f(z_high)
+        where f is sdf
+        
+        x2 = x1 - f(x1) * (x1 - x0) / (f(x1) - f(x0))
+        x3 = x2 - f(x2) * (x2 - x1) / (f(x2) - f(x1))
+        """
+        z_pred = - sdf_low * (z_high - z_low) / (sdf_high - sdf_low) + z_low  # x2, (n_secent_pts)
         for i in range(self.n_secant_steps):
             p_mid = cam_loc + z_pred.unsqueeze(-1) * ray_directions
-            sdf_mid = sdf(p_mid)
+            sdf_mid = sdf(p_mid)  # f(x2), (n_secent_pts)
             ind_low = sdf_mid > 0
             if ind_low.sum() > 0:
                 z_low[ind_low] = z_pred[ind_low]
                 sdf_low[ind_low] = sdf_mid[ind_low]
+
             ind_high = sdf_mid < 0
             if ind_high.sum() > 0:
                 z_high[ind_high] = z_pred[ind_high]
