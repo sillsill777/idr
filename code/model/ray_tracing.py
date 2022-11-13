@@ -283,35 +283,38 @@ class RayTracing(nn.Module):
             pts_intervals[torch.arange(pts_intervals.shape[0]), sampler_pts_ind]  # n_unfinished
         # pts_intervals[:, sampler_pts_ind]가 아님
 
-        true_surface_pts = object_mask[sampler_mask]
-        net_surface_pts = (sdf_val[torch.arange(sdf_val.shape[0]), sampler_pts_ind] < 0)
+        true_surface_pts = object_mask[sampler_mask]  # n_unfinished, boolean
+        net_surface_pts = (sdf_val[torch.arange(sdf_val.shape[0]), sampler_pts_ind] < 0)  # n_unfinished, boolean
+        # sdf가 음수인 점이 있으면 True (물체 존재) 아니면 False (배경)
 
         # take points with minimal SDF value for P_out pixels
         p_out_mask = ~(true_surface_pts & net_surface_pts)
         n_p_out = p_out_mask.sum()
         if n_p_out > 0:
             out_pts_idx = torch.argmin(sdf_val[p_out_mask, :], -1)
-            sampler_pts[mask_intersect_idx[p_out_mask]] = points[p_out_mask, :, :][torch.arange(n_p_out), out_pts_idx,
-                                                          :]
-            sampler_dists[mask_intersect_idx[p_out_mask]] = pts_intervals[p_out_mask, :][
-                torch.arange(n_p_out), out_pts_idx]
+            sampler_pts[mask_intersect_idx[p_out_mask]] = points[p_out_mask, :, :][torch.arange(n_p_out), out_pts_idx,:]
+            sampler_dists[mask_intersect_idx[p_out_mask]] = pts_intervals[p_out_mask, :][torch.arange(n_p_out), out_pts_idx]
 
         # Get Network object mask
         sampler_net_obj_mask = sampler_mask.clone()
         sampler_net_obj_mask[mask_intersect_idx[~net_surface_pts]] = False
+        # sampling 하려는 ray 중 sdf가 양수여서 물체의 표면이 아닌 배경이기 때문에? 제외
 
         # Run Secant method
         secant_pts = net_surface_pts & true_surface_pts if self.training else net_surface_pts
         n_secant_pts = secant_pts.sum()
         if n_secant_pts > 0:
             # Get secant z predictions
-            z_high = pts_intervals[torch.arange(pts_intervals.shape[0]), sampler_pts_ind][secant_pts]
-            sdf_high = sdf_val[torch.arange(sdf_val.shape[0]), sampler_pts_ind][secant_pts]
+            z_high = pts_intervals[torch.arange(pts_intervals.shape[0]), sampler_pts_ind][secant_pts]  # (n_secant_pts)
+            sdf_high = sdf_val[torch.arange(sdf_val.shape[0]), sampler_pts_ind][secant_pts]  # (n_secant_pts)
+
             z_low = pts_intervals[secant_pts][torch.arange(n_secant_pts), sampler_pts_ind[secant_pts] - 1]
             sdf_low = sdf_val[secant_pts][torch.arange(n_secant_pts), sampler_pts_ind[secant_pts] - 1]
-            cam_loc_secant = cam_loc.unsqueeze(1).repeat(1, num_pixels, 1).reshape((-1, 3))[
-                mask_intersect_idx[secant_pts]]
+
+            cam_loc_secant = cam_loc.unsqueeze(1).repeat(1, num_pixels, 1).reshape((-1, 3))[mask_intersect_idx[secant_pts]]
             ray_directions_secant = ray_directions.reshape((-1, 3))[mask_intersect_idx[secant_pts]]
+            # 둘 다 (n_secant_pts, 3)
+
             z_pred_secant = self.secant(sdf_low, sdf_high, z_low, z_high, cam_loc_secant, ray_directions_secant, sdf)
 
             # Get points
